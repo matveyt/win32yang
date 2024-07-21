@@ -99,8 +99,8 @@ int wmain(int argc, wchar_t* argv[])
             "\t-i\t\tSet clipboard from stdin\n"
             "\t--lf\t\tReplace CRLF with LF before printing to stdout\n"
             "\t--crlf\t\tReplace lone LF bytes with CRLF before setting the clipboard\n"
-            "\t--acp\t\tAssume CP_ACP (Active codepage) encoding\n"
-            "\t--oem\t\tAssume CP_OEMCP (OEM codepage) encoding\n"
+            "\t--acp\t\tAssume CP_ACP (system ANSI code page) encoding\n"
+            "\t--oem\t\tAssume CP_OEMCP (OEM code page) encoding\n"
             "\t--utf8\t\tAssume CP_UTF8 encoding (default)\n"
         ));
     break;

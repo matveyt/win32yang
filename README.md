@@ -39,6 +39,6 @@ Just `make` it!
     -i      Set clipboard from stdin
     --lf    Replace CRLF with LF before printing to stdout
     --crlf  Replace lone LF bytes with CRLF before setting the clipboard
-    --acp   Assume CP_ACP (Active codepage) encoding
-    --oem   Assume CP_OEMCP (OEM codepage) encoding
+    --acp   Assume CP_ACP (system ANSI code page) encoding
+    --oem   Assume CP_OEMCP (OEM code page) encoding
     --utf8  Assume CP_UTF8 encoding (default)
