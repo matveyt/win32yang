@@ -5,13 +5,13 @@ It is a clipboard tool for Windows. A drop-in replacement for
 
 Set the clipboard
 
-```
+```bat
 help | win32yang -i --oem
 ```
 
 Get the clipboard
 
-```
+```bat
 win32yang -o >utf8.txt
 ```
 
@@ -32,13 +32,17 @@ Just `make` it!
 
 ### Synopsis
 
-    win32yang -o [--lf]
-    win32yang -i [--crlf]
+```
+win32yang -i [--crlf]
+win32yang -o [--lf]
+win32yang -x
 
-    -o      Print clipboard contents to stdout
-    -i      Set clipboard from stdin
-    --lf    Replace CRLF with LF before printing to stdout
-    --crlf  Replace lone LF bytes with CRLF before setting the clipboard
-    --acp   Assume CP_ACP (system ANSI code page) encoding
-    --oem   Assume CP_OEMCP (OEM code page) encoding
-    --utf8  Assume CP_UTF8 encoding (default)
+-i      Set clipboard from stdin
+-o      Print clipboard contents to stdout
+-x      Delete clipboard
+--lf    Replace CRLF with LF before printing to stdout
+--crlf  Replace lone LF bytes with CRLF before setting the clipboard
+--acp   Assume CP_ACP (system ANSI code page) encoding
+--oem   Assume CP_OEMCP (OEM code page) encoding
+--utf8  Assume CP_UTF8 encoding (default)
+```
