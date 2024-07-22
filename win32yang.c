@@ -228,7 +228,7 @@ static BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz)
 static HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc)
 {
     int cchDst = MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, NULL, 0) + 1;
-    HANDLE hBuf = GlobalAlloc(GMEM_MOVEABLE, sizeof(WCHAR) * cchDst);
+    HANDLE hBuf = GlobalAlloc(GHND, sizeof(WCHAR) * cchDst);
     MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, GlobalLock(hBuf), cchDst);
     GlobalUnlock(hBuf);
     return hBuf;
