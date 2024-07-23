@@ -12,7 +12,7 @@ help | win32yang -i --oem
 Get the clipboard
 
 ```bat
-win32yang -o >utf8.txt
+win32yang -o --utf8 >clipboard.txt
 ```
 
 ### What are the advantages

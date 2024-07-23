@@ -1,6 +1,6 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Jul 22
+ * Last Change:  2024 Jul 23
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
@@ -15,8 +15,6 @@ static void* read_file(HANDLE h, BOOL crlf, size_t* psz);
 static BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz);
 static HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc);
 static void* wc2mb(UINT cp, const void* pSrc, size_t cchSrc, size_t* psz);
-static void set_nolock(UINT uFormat, HANDLE hData);
-static HANDLE get_and_lock(UINT uFormat, void* ppData, size_t* psz);
 static void* mem_alloc(size_t sz);
 static void* mem_realloc(void* ptr, size_t sz);
 static void mem_free(void* ptr);
@@ -24,7 +22,7 @@ static void mem_free(void* ptr);
 
 int wmain(int argc, wchar_t* argv[])
 {
-    int dir = 0;
+    int action = 0;
     BOOL lf = FALSE, crlf = FALSE;
     UINT cp = CP_UTF8;
 
@@ -36,7 +34,7 @@ int wmain(int argc, wchar_t* argv[])
             case L'o':
             case L'x':
                 if (p[0] == 0)
-                    dir = p[-1];
+                    action = p[-1];
             break;
             case L'-':
                 if (!lstrcmpW(p, L"lf"))
@@ -54,7 +52,7 @@ int wmain(int argc, wchar_t* argv[])
         }
     }
 
-    switch (dir) {
+    switch (action) {
         HANDLE hData;
         void* pBuf;
         size_t sz;
@@ -66,26 +64,26 @@ int wmain(int argc, wchar_t* argv[])
         mem_free(pBuf);
         if (OpenClipboard(NULL)) {
             EmptyClipboard();
-            set_nolock(CF_UNICODETEXT, hData);
+            if (SetClipboardData(CF_UNICODETEXT, hData) == NULL)
+                GlobalFree(hData);  // release HANDLE on failure
             CloseClipboard();
         }
     break;
 
     case L'o':
         // clipboard => stdout
-        pBuf = NULL, sz = 0;
         if (OpenClipboard(NULL)) {
-            void* pBufGlobal;
-            size_t szGlobal;
-            hData = get_and_lock(CF_UNICODETEXT, &pBufGlobal, &szGlobal);
-            if (hData != NULL) {
-                pBuf = wc2mb(cp, pBufGlobal, szGlobal / sizeof(WCHAR), &sz);
-                GlobalUnlock(hData);
+            hData = GetClipboardData(CF_UNICODETEXT);
+            if (hData == NULL) {
+                CloseClipboard();
+                break;
             }
+            pBuf = wc2mb(cp, GlobalLock(hData), GlobalSize(hData) / sizeof(WCHAR), &sz);
+            GlobalUnlock(hData);
             CloseClipboard();
+            write_file(GetStdHandle(STD_OUTPUT_HANDLE), lf, pBuf, sz);
+            mem_free(pBuf);
         }
-        write_file(GetStdHandle(STD_OUTPUT_HANDLE), lf, pBuf, sz);
-        mem_free(pBuf);
     break;
 
     case L'x':
@@ -123,7 +121,7 @@ int wmain(int argc, wchar_t* argv[])
 
 
 // allocate buffer and read file into it
-static void* read_file(HANDLE h, BOOL crlf, size_t* psz)
+void* read_file(HANDLE h, BOOL crlf, size_t* psz)
 {
     PBYTE pBuf = NULL, pbOut = NULL;
     size_t szDone = 0, szHole = 0, szTail = 0;
@@ -189,7 +187,7 @@ static void* read_file(HANDLE h, BOOL crlf, size_t* psz)
 
 // write buffer to file
 // if lf == TRUE then buffer must be writable
-static BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz)
+BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz)
 {
     PBYTE pbOut = pBuf;
 
@@ -225,7 +223,7 @@ static BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz)
 
 
 // MultiByte to WideChar (HGLOBAL)
-static HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc)
+HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc)
 {
     int cchDst = MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, NULL, 0) + 1;
     HANDLE hBuf = GlobalAlloc(GHND, sizeof(WCHAR) * cchDst);
@@ -234,8 +232,9 @@ static HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc)
     return hBuf;
 }
 
+
 // WideChar to MultiByte (HEAP)
-static void* wc2mb(UINT cp, const void* pSrc, size_t cchSrc, size_t* psz)
+void* wc2mb(UINT cp, const void* pSrc, size_t cchSrc, size_t* psz)
 {
     int cchDst = WideCharToMultiByte(cp, 0, pSrc, (int)cchSrc, NULL, 0, NULL, NULL) + 1;
     void* pBuf = mem_alloc(cchDst);
@@ -244,43 +243,22 @@ static void* wc2mb(UINT cp, const void* pSrc, size_t cchSrc, size_t* psz)
 }
 
 
-// safe set clipboard format
-static inline void set_nolock(UINT uFormat, HANDLE hData)
-{
-    if (SetClipboardData(uFormat, hData) == NULL)
-        GlobalFree(hData);
-}
-
-// safe get clipboard format
-static inline HANDLE get_and_lock(UINT uFormat, void* ppData, size_t* psz)
-{
-    HANDLE hData = GetClipboardData(uFormat);
-
-    if (hData != NULL) {
-        *(void**)ppData = GlobalLock(hData);
-        *psz = GlobalSize(hData);
-    }
-
-    return hData;
-}
-
-
 // process heap
 static HANDLE g_hHeap = NULL;
 
-static inline void* mem_alloc(size_t sz)
+inline void* mem_alloc(size_t sz)
 {
     if (g_hHeap == NULL)
         g_hHeap = GetProcessHeap();
     return HeapAlloc(g_hHeap, HEAP_GENERATE_EXCEPTIONS, sz);
 }
 
-static inline void* mem_realloc(void* ptr, size_t sz)
+inline void* mem_realloc(void* ptr, size_t sz)
 {
     return ptr ? HeapReAlloc(g_hHeap, HEAP_GENERATE_EXCEPTIONS, ptr, sz) : mem_alloc(sz);
 }
 
-static inline void mem_free(void* ptr)
+inline void mem_free(void* ptr)
 {
     HeapFree(g_hHeap, 0, ptr);
 }
