@@ -40,8 +40,8 @@ win32yang -x
 -i      Set clipboard from stdin
 -o      Print clipboard contents to stdout
 -x      Delete clipboard
---lf    Replace CRLF with LF before printing to stdout
 --crlf  Replace lone LF bytes with CRLF before setting the clipboard
+--lf    Replace CRLF with LF before printing to stdout
 --acp   Assume CP_ACP (system ANSI code page) encoding
 --oem   Assume CP_OEMCP (OEM code page) encoding
 --utf8  Assume CP_UTF8 encoding (default)

@@ -1,51 +1,54 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Jul 23
+ * Last Change:  2024 Jul 24
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
 
+
+#include <stdbool.h>
+#include <stdint.h>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 
 // forward prototypes
-static void* read_file(HANDLE h, BOOL crlf, size_t* psz);
-static BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz);
-static HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc);
-static void* wc2mb(UINT cp, const void* pSrc, size_t cchSrc, size_t* psz);
+static void* stdio_read(size_t* psz, bool crlf);
+static void stdio_write(void* ptr, size_t sz, bool lf);
+static HANDLE mb2wc(uint32_t cp, const void* pSrc, size_t cchSrc);
+static void* wc2mb(uint32_t cp, HANDLE hUCS, size_t* psz);
 static void* mem_alloc(size_t sz);
 static void* mem_realloc(void* ptr, size_t sz);
 static void mem_free(void* ptr);
 
 
-int wmain(int argc, wchar_t* argv[])
+int main(int argc, char* argv[])
 {
     int action = 0;
-    BOOL lf = FALSE, crlf = FALSE;
-    UINT cp = CP_UTF8;
+    bool crlf = false, lf = false;
+    uint32_t cp = CP_UTF8;
 
-    for (int i = 1; i < argc; ++i) {
-        PCWSTR p = argv[i];
-        if (*p++ == L'-') {
-            switch (*p++) {
-            case L'i':
-            case L'o':
-            case L'x':
-                if (p[0] == 0)
-                    action = p[-1];
+    for (int optind = 1; optind < argc; ++optind) {
+        const char* opt = argv[optind];
+        if (*opt++ == '-') {
+            switch (*opt++) {
+            case 'i':
+            case 'o':
+            case 'x':
+                if (opt[0] == 0)
+                    action = opt[-1];
             break;
-            case L'-':
-                if (!lstrcmpW(p, L"lf"))
-                    lf = TRUE;
-                else if (!lstrcmpW(p, L"crlf"))
-                    crlf = TRUE;
-                else if (!lstrcmpW(p, L"acp"))
+            case '-':
+                if (!lstrcmpA(opt, "crlf"))
+                    crlf = true;
+                else if (!lstrcmpA(opt, "lf"))
+                    lf = true;
+                else if (!lstrcmpA(opt, "acp"))
                     cp = GetACP();
-                else if (!lstrcmpW(p, L"oem"))
+                else if (!lstrcmpA(opt, "oem"))
                     cp = GetOEMCP();
-                else if (!lstrcmpW(p, L"utf8"))
+                else if (!lstrcmpA(opt, "utf8"))
                     cp = CP_UTF8;
             break;
             }
@@ -53,40 +56,39 @@ int wmain(int argc, wchar_t* argv[])
     }
 
     switch (action) {
-        HANDLE hData;
-        void* pBuf;
+        HANDLE hUCS;
+        void* ptr;
         size_t sz;
 
-    case L'i':
+    case 'i':
         // stdin => clipboard
-        pBuf = read_file(GetStdHandle(STD_INPUT_HANDLE), crlf, &sz);
-        hData = mb2wc(cp, pBuf, sz);
-        mem_free(pBuf);
+        ptr = stdio_read(&sz, crlf);
+        hUCS = mb2wc(cp, ptr, sz);
+        mem_free(ptr);
         if (OpenClipboard(NULL)) {
             EmptyClipboard();
-            if (SetClipboardData(CF_UNICODETEXT, hData) == NULL)
-                GlobalFree(hData);  // release HANDLE on failure
+            if (SetClipboardData(CF_UNICODETEXT, hUCS) == NULL)
+                GlobalFree(hUCS);   // release HANDLE on failure
             CloseClipboard();
         }
     break;
 
-    case L'o':
+    case 'o':
         // clipboard => stdout
         if (OpenClipboard(NULL)) {
-            hData = GetClipboardData(CF_UNICODETEXT);
-            if (hData == NULL) {
+            hUCS = GetClipboardData(CF_UNICODETEXT);
+            if (hUCS == NULL) {
                 CloseClipboard();
                 break;
             }
-            pBuf = wc2mb(cp, GlobalLock(hData), GlobalSize(hData) / sizeof(WCHAR), &sz);
-            GlobalUnlock(hData);
+            ptr = wc2mb(cp, hUCS, &sz);
             CloseClipboard();
-            write_file(GetStdHandle(STD_OUTPUT_HANDLE), lf, pBuf, sz);
-            mem_free(pBuf);
+            stdio_write(ptr, sz, lf);
+            mem_free(ptr);
         }
     break;
 
-    case L'x':
+    case 'x':
         // delete clipboard
         if (OpenClipboard(NULL)) {
             EmptyClipboard();
@@ -95,8 +97,8 @@ int wmain(int argc, wchar_t* argv[])
     break;
 
     default:
-#define ARRAY(a) (a), sizeof(a)
-        write_file(GetStdHandle(STD_ERROR_HANDLE), FALSE, ARRAY(
+#define STR(a) (a), (sizeof(a) - sizeof(*a))
+        WriteFile(GetStdHandle(STD_ERROR_HANDLE), STR(
             "Invalid arguments\n\n"
             "Usage:\n"
             "\twin32yang -i [--crlf]\n"
@@ -107,12 +109,12 @@ int wmain(int argc, wchar_t* argv[])
             "\t-i\t\tSet clipboard from stdin\n"
             "\t-o\t\tPrint clipboard contents to stdout\n"
             "\t-x\t\tDelete clipboard\n"
-            "\t--lf\t\tReplace CRLF with LF before printing to stdout\n"
             "\t--crlf\t\tReplace lone LF bytes with CRLF before setting the clipboard\n"
+            "\t--lf\t\tReplace CRLF with LF before printing to stdout\n"
             "\t--acp\t\tAssume CP_ACP (system ANSI code page) encoding\n"
             "\t--oem\t\tAssume CP_OEMCP (OEM code page) encoding\n"
             "\t--utf8\t\tAssume CP_UTF8 encoding (default)\n"
-        ));
+        ), &(DWORD){0}, NULL);
     break;
     }
 
@@ -120,17 +122,18 @@ int wmain(int argc, wchar_t* argv[])
 }
 
 
-// allocate buffer and read file into it
-void* read_file(HANDLE h, BOOL crlf, size_t* psz)
+// allocate buffer to read from stdin
+void* stdio_read(size_t* psz, bool crlf)
 {
-    PBYTE pBuf = NULL, pbOut = NULL;
+    void* ptr = NULL;
+    uint8_t* pOut = NULL;
     size_t szDone = 0, szHole = 0, szTail = 0;
     size_t szIncr = 2048;
 
     for (;;) {
-        // pBuf => szDone + szHole + szTail
-        //        pbOut---^        ^---pbIn
-        // szHole is a number of extra bytes between pbOut and pbIn
+        // ptr => szDone + szHole + szTail
+        //        pOut---^        ^---pIn
+        // szHole is a number of extra bytes between pOut and pIn
         // reserved for LF => CRLF expansion
         // if crlf == FALSE then szHole = 0; otherwise szHole = szIncr >= cbRead
         // szTail is a number of free bytes at the end of a buffer
@@ -141,8 +144,8 @@ void* read_file(HANDLE h, BOOL crlf, size_t* psz)
             // grow buffer
             szIncr += szIncr;
             szTail += szIncr2 + szIncr2;
-            pBuf = mem_realloc(pBuf, szDone + szHole + szTail);
-            pbOut = pBuf + szDone;
+            ptr = mem_realloc(ptr, szDone + szHole + szTail);
+            pOut = (uint8_t*)ptr + szDone;
         }
 
         if (crlf && szHole < szIncr) {
@@ -152,9 +155,9 @@ void* read_file(HANDLE h, BOOL crlf, size_t* psz)
         }
 
         // read szIncr bytes
-        PBYTE pbIn = pbOut + szHole;
+        uint8_t* pIn = pOut + szHole;
         DWORD cbRead;
-        ReadFile(h, pbIn, (DWORD)szIncr, &cbRead, NULL);
+        ReadFile(GetStdHandle(STD_INPUT_HANDLE), pIn, szIncr, &cbRead, NULL);
         // test EOF or error
         if (cbRead == 0)
             break;
@@ -165,100 +168,121 @@ void* read_file(HANDLE h, BOOL crlf, size_t* psz)
             // LF => CRLF
             int c1 = 0;
             do {
-                int c = *pbIn++;
+                int c = *pIn++;
                 if (c1 == '\r' || c != '\n') {
-                    *pbOut++ = c;
+                    *pOut++ = c;
                 } else {
-                    *pbOut++ = '\r';
-                    *pbOut++ = '\n';
+                    *pOut++ = '\r';
+                    *pOut++ = '\n';
                     --szHole;
                     ++szDone;
                 }
                 c1 = c;
             } while (--cbRead);
         } else {
-            pbOut += cbRead;
+            pOut += cbRead;
         }
     }
 
-    return *psz = szDone, pBuf;
+    return *psz = szDone, ptr;
 }
 
 
-// write buffer to file
-// if lf == TRUE then buffer must be writable
-BOOL write_file(HANDLE h, BOOL lf, void* pBuf, size_t sz)
+// write buffer to stdout
+void stdio_write(void* ptr, size_t sz, bool lf)
 {
-    PBYTE pbOut = pBuf;
+    uint8_t* pOut = ptr;
 
     if (lf) {
         // CRLF => LF
-        PBYTE pbIn;
+        uint8_t* pIn;
         size_t szTail;
-        for (pbIn = pbOut, szTail = sz; szTail >= 2; --szTail) {
+        for (pIn = pOut, szTail = sz; szTail >= 2; --szTail) {
             // at least two bytes left to look ahead
-            int c = *pbIn++;
-            if (c != '\r' || *pbIn != '\n') {
-                *pbOut++ = c;
+            int c = *pIn++;
+            if (c != '\r' || *pIn != '\n') {
+                *pOut++ = c;
             } else {
-                *pbOut++ = '\n';
-                ++pbIn;
+                *pOut++ = '\n';
+                ++pIn;
                 --szTail;
                 --sz;
             }
         }
         // pass last byte through
         if (szTail > 0)
-            *pbOut++ = *pbIn;
+            *pOut++ = *pIn;
     } else {
-        pbOut += sz;
+        pOut += sz;
     }
 
     // chop trailing zeroes
     if (sz > 0)
-        while (*--pbOut == 0 && --sz) ;
+        while (*--pOut == 0 && --sz) ;
 
-    return sz ? WriteFile(h, pBuf, (DWORD)sz, &(DWORD){0}, NULL) : FALSE;
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), ptr, sz, &(DWORD){0}, NULL);
 }
 
 
-// MultiByte to WideChar (HGLOBAL)
-HANDLE mb2wc(UINT cp, const void* pSrc, size_t cchSrc)
+// MultiByte => WideChar (HGLOBAL)
+HANDLE mb2wc(uint32_t cp, const void* pSrc, size_t cchSrc)
 {
     int cchDst = MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, NULL, 0) + 1;
-    HANDLE hBuf = GlobalAlloc(GHND, sizeof(WCHAR) * cchDst);
-    MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, GlobalLock(hBuf), cchDst);
-    GlobalUnlock(hBuf);
-    return hBuf;
+    HANDLE hUCS = GlobalAlloc(GHND, sizeof(WCHAR) * cchDst);
+    MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, GlobalLock(hUCS), cchDst);
+    GlobalUnlock(hUCS);
+    return hUCS;
 }
 
 
-// WideChar to MultiByte (HEAP)
-void* wc2mb(UINT cp, const void* pSrc, size_t cchSrc, size_t* psz)
+// WideChar => MultiByte
+void* wc2mb(uint32_t cp, HANDLE hUCS, size_t* psz)
 {
-    int cchDst = WideCharToMultiByte(cp, 0, pSrc, (int)cchSrc, NULL, 0, NULL, NULL) + 1;
-    void* pBuf = mem_alloc(cchDst);
-    cchDst = WideCharToMultiByte(cp, 0, pSrc, (int)cchSrc, pBuf, cchDst, NULL, NULL);
-    return *psz = (size_t)cchDst, pBuf;
+    const void* pSrc = GlobalLock(hUCS);
+    int cchSrc = GlobalSize(hUCS) / sizeof(WCHAR);
+    int cchDst = WideCharToMultiByte(cp, 0, pSrc, cchSrc, NULL, 0, NULL, NULL) + 1;
+    void* ptr = mem_alloc(cchDst);
+    cchDst = WideCharToMultiByte(cp, 0, pSrc, cchSrc, ptr, cchDst, NULL, NULL);
+    GlobalUnlock(hUCS);
+    return *psz = (size_t)cchDst, ptr;
 }
 
 
-// process heap
+// heap memory allocation
 static HANDLE g_hHeap = NULL;
-
 inline void* mem_alloc(size_t sz)
 {
     if (g_hHeap == NULL)
         g_hHeap = GetProcessHeap();
     return HeapAlloc(g_hHeap, HEAP_GENERATE_EXCEPTIONS, sz);
 }
-
 inline void* mem_realloc(void* ptr, size_t sz)
 {
     return ptr ? HeapReAlloc(g_hHeap, HEAP_GENERATE_EXCEPTIONS, ptr, sz) : mem_alloc(sz);
 }
-
 inline void mem_free(void* ptr)
 {
     HeapFree(g_hHeap, 0, ptr);
 }
+
+
+// ---micro startup code---
+#ifdef __GNUC__
+// from msvcrt.dll
+typedef struct { int newmode; } _startupinfo;
+extern void __getmainargs(int*, char***, char***, int, _startupinfo*);
+extern void __set_app_type(int);
+
+void __main(void) {}
+
+__declspec(noreturn)
+void mainCRTStartup(void)
+{
+    int argc;
+    char** argv;
+
+    __set_app_type(1);  // _CONSOLE_APP
+    __getmainargs(&argc, &argv, &(char**){NULL}, 0, &(_startupinfo){0});
+    ExitProcess(main(argc, argv));
+}
+#endif // __GNUC__
