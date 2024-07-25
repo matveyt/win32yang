@@ -1,16 +1,20 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Jul 24
+ * Last Change:  2024 Jul 25
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
 
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include <windef.h>
+#include <winbase.h>
+#include <winnls.h>
+#include <winuser.h>
+#include <shellapi.h>
 
 
 // forward prototypes
@@ -23,32 +27,32 @@ static void* mem_realloc(void* ptr, size_t sz);
 static void mem_free(void* ptr);
 
 
-int main(int argc, char* argv[])
+int wmain(int argc, wchar_t* argv[])
 {
     int action = 0;
     bool crlf = false, lf = false;
     uint32_t cp = CP_UTF8;
 
     for (int optind = 1; optind < argc; ++optind) {
-        const char* opt = argv[optind];
-        if (*opt++ == '-') {
-            switch (*opt++) {
-            case 'i':
-            case 'o':
-            case 'x':
-                if (opt[0] == 0)
-                    action = opt[-1];
+        const wchar_t* optarg = argv[optind];
+        if (*optarg++ == L'-') {
+            switch (*optarg++) {
+            case L'i':
+            case L'o':
+            case L'x':
+                if (optarg[0] == 0)
+                    action = optarg[-1];
             break;
-            case '-':
-                if (!lstrcmpA(opt, "crlf"))
+            case L'-':
+                if (!lstrcmpW(optarg, L"crlf"))
                     crlf = true;
-                else if (!lstrcmpA(opt, "lf"))
+                else if (!lstrcmpW(optarg, L"lf"))
                     lf = true;
-                else if (!lstrcmpA(opt, "acp"))
+                else if (!lstrcmpW(optarg, L"acp"))
                     cp = GetACP();
-                else if (!lstrcmpA(opt, "oem"))
+                else if (!lstrcmpW(optarg, L"oem"))
                     cp = GetOEMCP();
-                else if (!lstrcmpA(opt, "utf8"))
+                else if (!lstrcmpW(optarg, L"utf8"))
                     cp = CP_UTF8;
             break;
             }
@@ -60,7 +64,7 @@ int main(int argc, char* argv[])
         void* ptr;
         size_t sz;
 
-    case 'i':
+    case L'i':
         // stdin => clipboard
         ptr = stdio_read(&sz, crlf);
         hUCS = mb2wc(cp, ptr, sz);
@@ -73,7 +77,7 @@ int main(int argc, char* argv[])
         }
     break;
 
-    case 'o':
+    case L'o':
         // clipboard => stdout
         if (OpenClipboard(NULL)) {
             hUCS = GetClipboardData(CF_UNICODETEXT);
@@ -88,7 +92,7 @@ int main(int argc, char* argv[])
         }
     break;
 
-    case 'x':
+    case L'x':
         // delete clipboard
         if (OpenClipboard(NULL)) {
             EmptyClipboard();
@@ -266,23 +270,14 @@ inline void mem_free(void* ptr)
 }
 
 
-// ---micro startup code---
-#ifdef __GNUC__
-// from msvcrt.dll
-typedef struct { int newmode; } _startupinfo;
-extern void __getmainargs(int*, char***, char***, int, _startupinfo*);
-extern void __set_app_type(int);
-
-void __main(void) {}
-
+// micro startup code (requires -nostartfiles)
+#if defined(__GNUC__)
+#define wmainCRTStartup mainCRTStartup
+#endif // __GNUC__
 __declspec(noreturn)
-void mainCRTStartup(void)
+void wmainCRTStartup(void)
 {
     int argc;
-    char** argv;
-
-    __set_app_type(1);  // _CONSOLE_APP
-    __getmainargs(&argc, &argv, &(char**){NULL}, 0, &(_startupinfo){0});
-    ExitProcess(main(argc, argv));
+    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    ExitProcess(wmain(argc, argv));
 }
-#endif // __GNUC__
