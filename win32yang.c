@@ -1,20 +1,23 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Jul 25
+ * Last Change:  2024 Jul 29
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
 
 
+#if defined(UNICODE) && !defined(_UNICODE)
+#define _UNICODE
+#endif // UNICODE
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
-
+#include <tchar.h>
 #include <windef.h>
 #include <winbase.h>
 #include <winnls.h>
 #include <winuser.h>
-#include <shellapi.h>
 
 
 // forward prototypes
@@ -22,37 +25,37 @@ static void* stdio_read(size_t* psz, bool crlf);
 static void stdio_write(void* ptr, size_t sz, bool lf);
 static HANDLE mb2wc(uint32_t cp, const void* pSrc, size_t cchSrc);
 static void* wc2mb(uint32_t cp, HANDLE hUCS, size_t* psz);
-static void* mem_alloc(size_t sz);
-static void* mem_realloc(void* ptr, size_t sz);
-static void mem_free(void* ptr);
+static void* heap_alloc(size_t sz);
+static void* heap_realloc(void* ptr, size_t sz);
+static void heap_free(void* ptr);
 
 
-int wmain(int argc, wchar_t* argv[])
+int _tmain(int argc, _TCHAR* argv[])
 {
     int action = 0;
     bool crlf = false, lf = false;
     uint32_t cp = CP_UTF8;
 
     for (int optind = 1; optind < argc; ++optind) {
-        const wchar_t* optarg = argv[optind];
-        if (*optarg++ == L'-') {
+        const _TCHAR* optarg = argv[optind];
+        if (*optarg++ == _T('-')) {
             switch (*optarg++) {
-            case L'i':
-            case L'o':
-            case L'x':
+            case _T('i'):
+            case _T('o'):
+            case _T('x'):
                 if (optarg[0] == 0)
                     action = optarg[-1];
             break;
-            case L'-':
-                if (!lstrcmpW(optarg, L"crlf"))
+            case _T('-'):
+                if (!lstrcmp(optarg, _T("crlf")))
                     crlf = true;
-                else if (!lstrcmpW(optarg, L"lf"))
+                else if (!lstrcmp(optarg, _T("lf")))
                     lf = true;
-                else if (!lstrcmpW(optarg, L"acp"))
+                else if (!lstrcmp(optarg, _T("acp")))
                     cp = GetACP();
-                else if (!lstrcmpW(optarg, L"oem"))
+                else if (!lstrcmp(optarg, _T("oem")))
                     cp = GetOEMCP();
-                else if (!lstrcmpW(optarg, L"utf8"))
+                else if (!lstrcmp(optarg, _T("utf8")))
                     cp = CP_UTF8;
             break;
             }
@@ -64,11 +67,11 @@ int wmain(int argc, wchar_t* argv[])
         void* ptr;
         size_t sz;
 
-    case L'i':
+    case _T('i'):
         // stdin => clipboard
         ptr = stdio_read(&sz, crlf);
         hUCS = mb2wc(cp, ptr, sz);
-        mem_free(ptr);
+        heap_free(ptr);
         if (OpenClipboard(NULL)) {
             EmptyClipboard();
             if (SetClipboardData(CF_UNICODETEXT, hUCS) == NULL)
@@ -77,7 +80,7 @@ int wmain(int argc, wchar_t* argv[])
         }
     break;
 
-    case L'o':
+    case _T('o'):
         // clipboard => stdout
         if (OpenClipboard(NULL)) {
             hUCS = GetClipboardData(CF_UNICODETEXT);
@@ -88,11 +91,11 @@ int wmain(int argc, wchar_t* argv[])
             ptr = wc2mb(cp, hUCS, &sz);
             CloseClipboard();
             stdio_write(ptr, sz, lf);
-            mem_free(ptr);
+            heap_free(ptr);
         }
     break;
 
-    case L'x':
+    case _T('x'):
         // delete clipboard
         if (OpenClipboard(NULL)) {
             EmptyClipboard();
@@ -126,7 +129,7 @@ int wmain(int argc, wchar_t* argv[])
 }
 
 
-// allocate buffer to read from stdin
+// stdin => buffer (heap_alloc)
 void* stdio_read(size_t* psz, bool crlf)
 {
     void* ptr = NULL;
@@ -148,7 +151,7 @@ void* stdio_read(size_t* psz, bool crlf)
             // grow buffer
             szIncr += szIncr;
             szTail += szIncr2 + szIncr2;
-            ptr = mem_realloc(ptr, szDone + szHole + szTail);
+            ptr = heap_realloc(ptr, szDone + szHole + szTail);
             pOut = (uint8_t*)ptr + szDone;
         }
 
@@ -161,7 +164,7 @@ void* stdio_read(size_t* psz, bool crlf)
         // read szIncr bytes
         uint8_t* pIn = pOut + szHole;
         DWORD cbRead;
-        ReadFile(GetStdHandle(STD_INPUT_HANDLE), pIn, szIncr, &cbRead, NULL);
+        ReadFile(GetStdHandle(STD_INPUT_HANDLE), pIn, (DWORD)szIncr, &cbRead, NULL);
         // test EOF or error
         if (cbRead == 0)
             break;
@@ -174,7 +177,7 @@ void* stdio_read(size_t* psz, bool crlf)
             do {
                 int c = *pIn++;
                 if (c1 == '\r' || c != '\n') {
-                    *pOut++ = c;
+                    *pOut++ = (uint8_t)c;
                 } else {
                     *pOut++ = '\r';
                     *pOut++ = '\n';
@@ -192,7 +195,7 @@ void* stdio_read(size_t* psz, bool crlf)
 }
 
 
-// write buffer to stdout
+// buffer => stdout
 void stdio_write(void* ptr, size_t sz, bool lf)
 {
     uint8_t* pOut = ptr;
@@ -205,7 +208,7 @@ void stdio_write(void* ptr, size_t sz, bool lf)
             // at least two bytes left to look ahead
             int c = *pIn++;
             if (c != '\r' || *pIn != '\n') {
-                *pOut++ = c;
+                *pOut++ = (uint8_t)c;
             } else {
                 *pOut++ = '\n';
                 ++pIn;
@@ -224,11 +227,11 @@ void stdio_write(void* ptr, size_t sz, bool lf)
     if (sz > 0)
         while (*--pOut == 0 && --sz) ;
 
-    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), ptr, sz, &(DWORD){0}, NULL);
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), ptr, (DWORD)sz, &(DWORD){0}, NULL);
 }
 
 
-// MultiByte => WideChar (HGLOBAL)
+// MultiByte => WideChar (GlobalAlloc)
 HANDLE mb2wc(uint32_t cp, const void* pSrc, size_t cchSrc)
 {
     int cchDst = MultiByteToWideChar(cp, 0, pSrc, (int)cchSrc, NULL, 0) + 1;
@@ -239,45 +242,37 @@ HANDLE mb2wc(uint32_t cp, const void* pSrc, size_t cchSrc)
 }
 
 
-// WideChar => MultiByte
+// WideChar => MultiByte (heap_alloc)
 void* wc2mb(uint32_t cp, HANDLE hUCS, size_t* psz)
 {
     const void* pSrc = GlobalLock(hUCS);
     int cchSrc = GlobalSize(hUCS) / sizeof(WCHAR);
     int cchDst = WideCharToMultiByte(cp, 0, pSrc, cchSrc, NULL, 0, NULL, NULL) + 1;
-    void* ptr = mem_alloc(cchDst);
+    void* ptr = heap_alloc(cchDst);
     cchDst = WideCharToMultiByte(cp, 0, pSrc, cchSrc, ptr, cchDst, NULL, NULL);
     GlobalUnlock(hUCS);
     return *psz = (size_t)cchDst, ptr;
 }
 
 
-// heap memory allocation
-static HANDLE g_hHeap = NULL;
-inline void* mem_alloc(size_t sz)
+// heap functions
+static inline void* heap_alloc(size_t sz)
 {
-    if (g_hHeap == NULL)
-        g_hHeap = GetProcessHeap();
-    return HeapAlloc(g_hHeap, HEAP_GENERATE_EXCEPTIONS, sz);
+    return HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, sz);
 }
-inline void* mem_realloc(void* ptr, size_t sz)
+
+static inline void* heap_realloc(void* ptr, size_t sz)
 {
-    return ptr ? HeapReAlloc(g_hHeap, HEAP_GENERATE_EXCEPTIONS, ptr, sz) : mem_alloc(sz);
+    return ptr ? HeapReAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, ptr, sz)
+        : heap_alloc(sz);
 }
-inline void mem_free(void* ptr)
+
+static inline void heap_free(void* ptr)
 {
-    HeapFree(g_hHeap, 0, ptr);
+    HeapFree(GetProcessHeap(), 0, ptr);
 }
 
 
-// micro startup code (requires -nostartfiles)
-#if defined(__GNUC__)
-#define wmainCRTStartup mainCRTStartup
-#endif // __GNUC__
-__declspec(noreturn)
-void wmainCRTStartup(void)
-{
-    int argc;
-    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    ExitProcess(wmain(argc, argv));
-}
+// micro CRT startup code
+#define ARGV builtin
+#include "nocrt0c.c"
