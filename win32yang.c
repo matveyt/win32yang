@@ -1,6 +1,6 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Jul 29
+ * Last Change:  2024 Aug 12
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
@@ -10,14 +10,11 @@
 #define _UNICODE
 #endif // UNICODE
 
-#include <stdarg.h>
+#define WIN32_LEAN_AND_MEAN
 #include <stdbool.h>
 #include <stdint.h>
 #include <tchar.h>
-#include <windef.h>
-#include <winbase.h>
-#include <winnls.h>
-#include <winuser.h>
+#include <windows.h>
 
 
 // forward prototypes
