@@ -1,6 +1,6 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Aug 12
+ * Last Change:  2024 Nov 29
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
@@ -22,8 +22,7 @@ static void* stdio_read(size_t* psz, bool crlf);
 static void stdio_write(void* ptr, size_t sz, bool lf);
 static HANDLE mb2wc(uint32_t cp, const void* pSrc, size_t cchSrc);
 static void* wc2mb(uint32_t cp, HANDLE hUCS, size_t* psz);
-static void* heap_alloc(size_t sz);
-static void* heap_realloc(void* ptr, size_t sz);
+static void* heap_alloc(void* ptr, size_t sz);
 static void heap_free(void* ptr);
 
 
@@ -148,7 +147,7 @@ void* stdio_read(size_t* psz, bool crlf)
             // grow buffer
             szIncr += szIncr;
             szTail += szIncr2 + szIncr2;
-            ptr = heap_realloc(ptr, szDone + szHole + szTail);
+            ptr = heap_alloc(ptr, szDone + szHole + szTail);
             pOut = (uint8_t*)ptr + szDone;
         }
 
@@ -245,23 +244,18 @@ void* wc2mb(uint32_t cp, HANDLE hUCS, size_t* psz)
     const void* pSrc = GlobalLock(hUCS);
     int cchSrc = GlobalSize(hUCS) / sizeof(WCHAR);
     int cchDst = WideCharToMultiByte(cp, 0, pSrc, cchSrc, NULL, 0, NULL, NULL) + 1;
-    void* ptr = heap_alloc(cchDst);
+    void* ptr = heap_alloc(NULL, cchDst);
     cchDst = WideCharToMultiByte(cp, 0, pSrc, cchSrc, ptr, cchDst, NULL, NULL);
     GlobalUnlock(hUCS);
     return *psz = (size_t)cchDst, ptr;
 }
 
 
-// heap functions
-static inline void* heap_alloc(size_t sz)
-{
-    return HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, sz);
-}
-
-static inline void* heap_realloc(void* ptr, size_t sz)
+// heap allocation
+static inline void* heap_alloc(void* ptr, size_t sz)
 {
     return ptr ? HeapReAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, ptr, sz)
-        : heap_alloc(sz);
+        : HeapAlloc(GetProcessHeap(), HEAP_GENERATE_EXCEPTIONS, sz);
 }
 
 static inline void heap_free(void* ptr)
@@ -271,5 +265,7 @@ static inline void heap_free(void* ptr)
 
 
 // micro CRT startup code
-#define ARGV builtin
+#if __has_include("nocrt0c.c")
+#define ARGV none
 #include "nocrt0c.c"
+#endif
