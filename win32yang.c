@@ -1,6 +1,6 @@
 /*
  * win32yang - Clipboard tool for Windows
- * Last Change:  2024 Nov 29
+ * Last Change:  2024 Dec 16
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/win32yang
  */
@@ -266,6 +266,6 @@ static inline void heap_free(void* ptr)
 
 // micro CRT startup code
 #if __has_include("nocrt0c.c")
-#define ARGV none
+#define ARGV builtin
 #include "nocrt0c.c"
 #endif
